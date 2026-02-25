@@ -5,6 +5,27 @@ import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime, timedelta, date
 
+TTL_30_MIN = 60 * 30
+
+@st.cache_data(ttl=TTL_30_MIN, show_spinner=False)
+def download_data_cached(symbol: str, start_d: date, end_d: date):
+ if not symbol:
+ return None
+ sym = symbol.strip().upper()
+ if not sym.endswith("=X"):
+ sym += "=X"
+ try:
+ df = yf.download(sym, start=start_d, end=end_d, progress=False, group_by="ticker", interval="1d")
+ if df is None or df.empty:
+ return None
+ if isinstance(df.columns, pd.MultiIndex):
+ df = df[sym]
+ if "Close" not in df.columns:
+ return None
+ return df
+ except Exception:
+ return None
+
 def render_expo_fx_v6():
  PREFIX = "expov6__"
 
@@ -36,31 +57,7 @@ def render_expo_fx_v6():
  unsafe_allow_html=True,
  )
 
- # -----------------------------
- # CACHE: download Yahoo Finance
- # -----------------------------
- @st.cache_data(ttl=60 * 60, show_spinner=False)
- def download_data_cached(symbol: str, start_d: date, end_d: date):
- """Scarica dati reali; cached per 1 ora."""
- if not symbol:
- return None
- sym = symbol.strip().upper()
- if not sym.endswith("=X"):
- sym += "=X"
- try:
- df = yf.download(sym, start=start_d, end=end_d, progress=False, group_by="ticker", interval="1d")
- if df is None or df.empty:
- return None
- if isinstance(df.columns, pd.MultiIndex):
- df = df[sym]
- if "Close" not in df.columns:
- return None
- return df
- except Exception:
- return None
-
  def download_data(symbol, start_d, end_d_dt):
- # normalizziamo l'end al giorno (così la cache non si invalida continuamente)
  end_day = end_d_dt.date() if isinstance(end_d_dt, datetime) else end_d_dt
  return download_data_cached(symbol, start_d, end_day)
 
@@ -79,6 +76,7 @@ def render_expo_fx_v6():
  pips = raw_diff * 10000
  pnl = (pips * pipv) + (swap_d * days_counter)
  pnl_series.append(pnl)
+
  return pd.Series(pnl_series, index=closes.index)
 
  def reset_all():
@@ -169,8 +167,7 @@ def render_expo_fx_v6():
 
  group_series = {"A": [], "B": [], "C": []}
 
- # Spinner solo durante update
- with st.spinner("Aggiornamento dati FX (cached)..."):
+ with st.spinner("Aggiornamento dati FX (cache 30 minuti)..."):
  for i in range(1, 16):
  t1_date = st.session_state.get(k(f"s{i}_t1_date"))
  t1_type = st.session_state.get(k(f"s{i}_t1_type"))
@@ -364,8 +361,8 @@ def render_expo_fx_v6():
  st.plotly_chart(fig_ref, use_container_width=True)
 
  st.markdown("---")
-
  st.markdown("### Grafico Andamento Slot")
+
  g2_filter = st.selectbox(
  "Filtra Slot:",
  ("Visualizza solo slot utilizzati", "Visualizza solo slot da 1 a 5", "Visualizza solo slot da 6 a 10", "Visualizza solo slot da 11 a 15"),
@@ -397,8 +394,8 @@ def render_expo_fx_v6():
  st.info("Compila almeno uno slot per vedere il grafico delle performance.")
 
  st.markdown("---")
-
  st.markdown("### Grafico Totale Esposizione")
+
  if current_chart_data:
  all_dfs_dates = [t["df"]["Date"] for t in current_chart_data]
  all_dates_list = pd.concat(all_dfs_dates).unique()
@@ -445,8 +442,8 @@ def render_expo_fx_v6():
  st.plotly_chart(fig_total, use_container_width=True)
 
  st.markdown("---")
-
  st.markdown("### Grafico 4: Analisi Gruppi (1-5, 6-10, 11-15)")
+
  g4_view = st.selectbox(
  "Seleziona Visualizzazione:",
  (
