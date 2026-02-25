@@ -75,9 +75,10 @@ def render_weighing_fx():
 
  start_date = datetime.now() - timedelta(days=months * 30.44)
 
- with st.spinner("Scarico dati (cached 30 min) e calcolo statistiche..."):
+ with st.spinner("Scarico dati (cache 30 min) e calcolo statistiche..."):
  try:
  data = download_fx_close_cached(tuple(selected_fx), start_date)
+
  if data is None or getattr(data, "empty", False):
  st.warning("Nessun dato trovato per le coppie di valute selezionate.")
  return
@@ -134,8 +135,14 @@ def render_weighing_fx():
  return "color: red; font-weight: bold"
  return "color: black"
 
- styled_df = df_results.style.applymap(color_cells, subset=["Variazione Media", "Media Negative", "Media Positive"])
- styled_df = styled_df.applymap(lambda x: "color: #0047AB; font-weight: bold", subset=["Somma Calcolata"])
+ styled_df = df_results.style.applymap(
+ color_cells,
+ subset=["Variazione Media", "Media Negative", "Media Positive"],
+ )
+ styled_df = styled_df.applymap(
+ lambda x: "color: #0047AB; font-weight: bold",
+ subset=["Somma Calcolata"],
+ )
  styled_df = styled_df.format(
  {
  "Variazione Media": "{:.2%}",
