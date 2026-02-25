@@ -5,36 +5,9 @@ import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime, timedelta, date
 
-TTL_30_MIN = 60 * 30
-
-@st.cache_data(ttl=TTL_30_MIN, show_spinner=False)
-def _download_fx_close(symbol: str, start_d: date, end_d: date):
-    if not symbol:
-        return None
-    sym = symbol.strip().upper()
-    if not sym.endswith("=X"):
-        sym += "=X"
-    try:
-        df = yf.download(
-            sym,
-            start=start_d,
-            end=end_d,
-            progress=False,
-            group_by="ticker",
-            interval="1d",
-        )
-        if df is None or df.empty:
-            return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df = df[sym]
-        if "Close" not in df.columns:
-            return None
-        return df
-    except Exception:
-        return None
-
 def render_expo_fx_v6():
     PREFIX = "expov6__"
+    TTL_30_MIN = 60 * 30
 
     def k(name: str) -> str:
         return f"{PREFIX}{name}"
@@ -50,6 +23,7 @@ def render_expo_fx_v6():
           color: black;
           font-weight: bold;
         }
+
         .slot-container {
           border: 2px solid #555;
           border-radius: 8px;
@@ -61,6 +35,7 @@ def render_expo_fx_v6():
         .slot-yellow { border: 3px solid #FFD700 !important; background-color: #fffff0; }
         .slot-blue { border: 3px solid #0047AB !important; background-color: #f0f8ff; }
         .slot-red { border: 3px solid #FF0000 !important; background-color: #fff0f0; }
+
         .slot-header {
           font-size: 18px;
           font-weight: bold;
@@ -69,7 +44,9 @@ def render_expo_fx_v6():
           border-bottom: 1px solid #ddd;
           padding-bottom: 5px;
         }
+
         .trade-separator { border-top: 1px dashed #aaa; margin: 10px 0; }
+
         .value-positive { color: #0047AB !important; font-weight: bold; font-size: 18px; background-color: #e6f0ff; padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #0047AB; margin-top: 5px; }
         .value-negative { color: #FF0000 !important; font-weight: bold; font-size: 18px; background-color: #ffe6e6; padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #FF0000; margin-top: 5px; }
         .value-neutral  { color: #333; font-size: 18px; background-color: #f0f0f0; padding: 10px; border-radius: 5px; text-align: center; margin-top: 5px; }
@@ -78,11 +55,30 @@ def render_expo_fx_v6():
         unsafe_allow_html=True,
     )
 
-    def download_data(symbol: str, start_d: date, end_dt: datetime):
-        end_day = end_dt.date()
-        return _download_fx_close(symbol, start_d, end_day)
+    @st.cache_data(ttl=TTL_30_MIN, show_spinner=False)
+    def download_data_cached(symbol: str, start_d: date, end_d: date):
+        if not symbol:
+            return None
+        sym = symbol.strip().upper()
+        if not sym.endswith("=X"):
+            sym += "=X"
+        try:
+            df = yf.download(sym, start=start_d, end=end_d, progress=False, group_by="ticker", interval="1d")
+            if df is None or df.empty:
+                return None
+            if isinstance(df.columns, pd.MultiIndex):
+                df = df[sym]
+            if "Close" not in df.columns:
+                return None
+            return df
+        except Exception:
+            return None
 
-    def calculate_daily_pnl(df: pd.DataFrame, open_p: float, type_t: str, pipv: float, swap_d: float):
+    def download_data(symbol: str, start_d: date, end_d_dt: datetime):
+        end_day = end_d_dt.date()
+        return download_data_cached(symbol, start_d, end_day)
+
+    def calculate_daily_pnl(df, open_p, type_t, pipv, swap_d):
         if df is None or df.empty or "Close" not in df.columns:
             return None
         closes = df["Close"]
@@ -117,7 +113,7 @@ def render_expo_fx_v6():
             st.session_state[target_key] = st.session_state[source_key]
         return callback
 
-    # INIT
+    # ---- init state
     if k("inputs_initialized") not in st.session_state:
         default_date = date(2017, 1, 1)
 
@@ -149,7 +145,6 @@ def render_expo_fx_v6():
         st.session_state[k("inputs_initialized")] = True
 
     st.header("EXPO FX V6 - Dashboard Trading")
-    st.write("Grafico 1: DISPY/CTRV | Grafico 2: Slot | Grafico 3: Totale Esposizione | Grafico 4: Analisi Gruppi")
 
     c_btn1, c_btn2 = st.columns(2)
     with c_btn1:
@@ -167,7 +162,7 @@ def render_expo_fx_v6():
 
     st.markdown("---")
 
-    # CALC
+    # ---- compute
     need_update = st.session_state.get(k("do_update"), False) or not st.session_state.get(k("results"))
     if need_update:
         if k("do_update") in st.session_state:
@@ -283,9 +278,10 @@ def render_expo_fx_v6():
             for s in s_list:
                 total += s.reindex(all_idx).ffill().fillna(0)
             group_totals[g_key] = pd.DataFrame({"Date": total.index, "Value": total.values})
+
         st.session_state[k("group_totals")] = group_totals
 
-    # READ STATE
+    # ---- read state
     current_results = st.session_state.get(k("results"), {})
     current_chart_data = st.session_state.get(k("chart_data"), [])
     current_group_totals = st.session_state.get(k("group_totals"), {})
@@ -303,13 +299,13 @@ def render_expo_fx_v6():
     def display_colored_value(value, error_msg=None):
         if error_msg:
             st.markdown(f'<div class="value-neutral">{error_msg}</div>', unsafe_allow_html=True)
-            return
-        if value > 0:
-            st.markdown(f'<div class="value-positive">{value:.2f}</div>', unsafe_allow_html=True)
-        elif value < 0:
-            st.markdown(f'<div class="value-negative">{value:.2f}</div>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<div class="value-neutral">{value:.2f}</div>', unsafe_allow_html=True)
+            if value > 0:
+                st.markdown(f'<div class="value-positive">{value:.2f}</div>', unsafe_allow_html=True)
+            elif value < 0:
+                st.markdown(f'<div class="value-negative">{value:.2f}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="value-neutral">{value:.2f}</div>', unsafe_allow_html=True)
 
     def add_zero_line(fig, min_date, max_date):
         fig.add_shape(
@@ -321,17 +317,13 @@ def render_expo_fx_v6():
             line=dict(color="black", width=2, dash="dash"),
         )
 
-    # UI SLOTS
+    # ---- UI slots
     for i in range(1, 16):
         data = current_results.get(
             i,
-            {
-                "t1_act": 0.0, "t1_val": 0.0, "t1_err": None,
-                "t2_act": 0.0, "t2_val": 0.0, "t2_err": None,
-            },
+            {"t1_act": 0.0, "t1_val": 0.0, "t1_err": None, "t2_act": 0.0, "t2_val": 0.0, "t2_err": None},
         )
 
-        border_class = "slot-container"
         if 1 <= i <= 5:
             border_class = "slot-container slot-yellow"
         elif 6 <= i <= 10:
@@ -379,7 +371,7 @@ def render_expo_fx_v6():
         with d8:
             display_colored_value(data["t2_val"], data["t2_err"])
 
-    # GRAFICO 1
+    # ---- charts
     st.markdown("### Grafico Riferimento (DISPY / CTRV)")
     fig_ref = go.Figure()
     fig_ref.add_trace(go.Scatter(x=[min_x, max_x], y=[current_dispy, current_dispy], mode="lines", name="DISPY", line=dict(color="black", dash="dash", width=2)))
@@ -391,7 +383,6 @@ def render_expo_fx_v6():
 
     st.markdown("---")
 
-    # GRAFICO 2
     st.markdown("### Grafico Andamento Slot")
     g2_filter = st.selectbox(
         "Filtra Slot:",
@@ -415,15 +406,8 @@ def render_expo_fx_v6():
                 or ("11 a 15" in g2_filter and 11 <= slot_num <= 15)
             )
             if show_trace:
-                fig_slots.add_trace(
-                    go.Scatter(
-                        x=trace["df"]["Date"],
-                        y=trace["df"]["Value"],
-                        mode="lines",
-                        name=trace["name"],
-                        line=dict(color=trace["color"], width=3),
-                    )
-                )
+                fig_slots.add_trace(go.Scatter(x=trace["df"]["Date"], y=trace["df"]["Value"], mode="lines", name=trace["name"], line=dict(color=trace["color"], width=3)))
+
         add_zero_line(fig_slots, min_x, max_x)
         fig_slots.update_yaxes(range=[-3400, 3400], title_text="Valore Monetario Slot")
         fig_slots.update_xaxes(title_text="Scala Temporale", tickformat="%Y-%m-%d")
@@ -434,11 +418,11 @@ def render_expo_fx_v6():
 
     st.markdown("---")
 
-    # GRAFICO 3
     st.markdown("### Grafico Totale Esposizione")
     if current_chart_data:
         master_dates = np.sort(pd.concat([t["df"]["Date"] for t in current_chart_data]).unique())
         total_pnl_all = np.zeros(len(master_dates))
+
         for trace in current_chart_data:
             df_temp = trace["df"].set_index("Date")
             aligned = df_temp.reindex(master_dates).ffill().fillna(0)
@@ -446,8 +430,8 @@ def render_expo_fx_v6():
 
         total_df_all = pd.DataFrame({"Date": master_dates, "Total": total_pnl_all})
         fig_total = go.Figure()
-        fig_total.add_trace(go.Scatter(x=total_df_all["Date"], y=total_df_all["Total"], mode="lines", name="Totale (1-15)", line=dict(color="#FF0000", width=4)))
 
+        fig_total.add_trace(go.Scatter(x=total_df_all["Date"], y=total_df_all["Total"], mode="lines", name="Totale (1-15)", line=dict(color="#FF0000", width=4)))
         if current_group_totals.get("A") is not None:
             fig_total.add_trace(go.Scatter(x=current_group_totals["A"]["Date"], y=current_group_totals["A"]["Value"], mode="lines", name="Totale (1-5)", line=dict(color="#FFD800", width=3)))
         if current_group_totals.get("B") is not None:
@@ -463,7 +447,6 @@ def render_expo_fx_v6():
 
     st.markdown("---")
 
-    # GRAFICO 4
     st.markdown("### Grafico 4: Analisi Gruppi (1-5, 6-10, 11-15)")
     g4_view = st.selectbox(
         "Seleziona Visualizzazione:",
