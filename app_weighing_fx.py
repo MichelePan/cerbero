@@ -9,9 +9,9 @@ TTL_30_MIN = 60 * 30
 def download_fx_close_cached(tickers: tuple, start_date: datetime):
  df = yf.download(list(tickers), start=start_date, interval="1d", auto_adjust=True, progress=False)
  if df is None or df.empty:
- return None
+  return None
  if "Close" not in df.columns:
- return None
+  return None
  return df["Close"]
 
 def render_weighing_fx():
