@@ -10,8 +10,8 @@ st.set_page_config(
  initial_sidebar_state="collapsed"
 )
 
-st.title("FX Suite Dashboard")
-st.caption("EXPO FX V6 • FORE/FORECAST FX • WEIGHING FX")
+st.title("CERBERO Dashboard")
+st.caption("EVERYTHING YOU NEED ABOUT FX")
 st.markdown("---")
 
 tab1, tab2, tab3 = st.tabs(["EXPO FX V6", "FORE / FORECAST FX", "WEIGHING FX"])
