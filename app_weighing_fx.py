@@ -3,6 +3,17 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 
+TTL_30_MIN = 60 * 30
+
+@st.cache_data(ttl=TTL_30_MIN, show_spinner=False)
+def download_fx_close_cached(tickers: tuple, start_date: datetime):
+ df = yf.download(list(tickers), start=start_date, interval="1d", auto_adjust=True, progress=False)
+ if df is None or df.empty:
+ return None
+ if "Close" not in df.columns:
+ return None
+ return df["Close"]
+
 def render_weighing_fx():
  st.header("WEIGHING FX")
  st.markdown("---")
@@ -17,7 +28,7 @@ def render_weighing_fx():
  value=12,
  step=1,
  help="Seleziona l'intervallo temporale in mesi (da 3 a 24)",
- key="wf_months"
+ key="wf_months",
  )
 
  st.markdown("### Selezione Tassi di Cambio")
@@ -26,9 +37,18 @@ def render_weighing_fx():
  DEFAULT_FX = ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X", "AUDUSD=X", "USDCAD=X"]
 
  common_pairs = [
- "EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X",
- "AUDUSD=X", "USDCAD=X", "NZDUSD=X", "EURGBP=X",
- "EURJPY=X", "GBPJPY=X", "USDMXN=X", "USDTRY=X"
+ "EURUSD=X",
+ "GBPUSD=X",
+ "USDJPY=X",
+ "USDCHF=X",
+ "AUDUSD=X",
+ "USDCAD=X",
+ "NZDUSD=X",
+ "EURGBP=X",
+ "EURJPY=X",
+ "GBPJPY=X",
+ "USDMXN=X",
+ "USDTRY=X",
  ]
 
  selected_fx = st.multiselect(
@@ -36,7 +56,7 @@ def render_weighing_fx():
  options=common_pairs,
  default=DEFAULT_FX,
  max_selections=6,
- key="wf_selected_fx"
+ key="wf_selected_fx",
  )
 
  if not selected_fx:
@@ -50,19 +70,21 @@ def render_weighing_fx():
  return
 
  st.markdown("---")
-
- st.title(f"Analisi FX: Ultimi {months} Mesi")
+ st.subheader(f"Analisi FX: Ultimi {months} Mesi")
  st.markdown("Dati basati su **valori di chiusura giornalieri** (1d).")
 
  start_date = datetime.now() - timedelta(days=months * 30.44)
 
- with st.spinner('Scarico dati FX da Yahoo Finance e calcolo statistiche...'):
+ with st.spinner("Scarico dati (cached 30 min) e calcolo statistiche..."):
  try:
- data = yf.download(selected_fx, start=start_date, interval='1d', auto_adjust=True)['Close']
+ data = download_fx_close_cached(tuple(selected_fx), start_date)
+ if data is None or getattr(data, "empty", False):
+ st.warning("Nessun dato trovato per le coppie di valute selezionate.")
+ return
 
  percent_changes = data.pct_change().dropna()
- results_data = []
 
+ results_data = []
  for ticker in selected_fx:
  if ticker not in percent_changes.columns:
  continue
@@ -87,39 +109,43 @@ def render_weighing_fx():
  modified_neg = abs_avg_neg
  final_val = modified_neg + avg_pos
 
- results_data.append({
+ results_data.append(
+ {
  "Ticker": ticker,
  "Variazione Media": avg_change,
  "Media Negative": avg_neg,
  "Media Positive": avg_pos,
- "Somma Calcolata": final_val
- })
+ "Somma Calcolata": final_val,
+ }
+ )
 
  df_results = pd.DataFrame(results_data)
 
- if not df_results.empty:
+ if df_results.empty:
+ st.warning("Nessun dato trovato per le coppie di valute selezionate.")
+ return
+
  df_results.set_index("Ticker", inplace=True)
 
  def color_cells(val):
  if val > 0:
- return 'color: green; font-weight: bold'
- elif val < 0:
- return 'color: red; font-weight: bold'
- return 'color: black'
+ return "color: green; font-weight: bold"
+ if val < 0:
+ return "color: red; font-weight: bold"
+ return "color: black"
 
  styled_df = df_results.style.applymap(color_cells, subset=["Variazione Media", "Media Negative", "Media Positive"])
- styled_df = styled_df.applymap(lambda x: 'color: #0047AB; font-weight: bold', subset=["Somma Calcolata"])
-
- styled_df = styled_df.format({
- 'Variazione Media': '{:.2%}',
- 'Media Negative': '{:.2%}',
- 'Media Positive': '{:.2%}',
- 'Somma Calcolata': '{:.2%}'
- })
+ styled_df = styled_df.applymap(lambda x: "color: #0047AB; font-weight: bold", subset=["Somma Calcolata"])
+ styled_df = styled_df.format(
+ {
+ "Variazione Media": "{:.2%}",
+ "Media Negative": "{:.2%}",
+ "Media Positive": "{:.2%}",
+ "Somma Calcolata": "{:.2%}",
+ }
+ )
 
  st.dataframe(styled_df, use_container_width=True)
- else:
- st.warning("Nessun dato trovato per le coppie di valute selezionate.")
 
  except Exception as e:
  st.error(f"Si è verificato un errore: {e}")
